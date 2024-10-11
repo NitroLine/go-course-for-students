@@ -1,8 +1,12 @@
 package tagcloud
 
+import (
+	"slices"
+)
+
 // TagCloud aggregates statistics about used tags
 type TagCloud struct {
-	// TODO: add fields if necessary
+	tags map[string]int
 }
 
 // TagStat represents statistics regarding single tag
@@ -12,17 +16,14 @@ type TagStat struct {
 }
 
 // New should create a valid TagCloud instance
-// TODO: You decide whether this function should return a pointer or a value
-func New() TagCloud {
-	// TODO: Implement this
-	return TagCloud{}
+func New() *TagCloud {
+	return &TagCloud{tags: map[string]int{}}
 }
 
 // AddTag should add a tag to the cloud if it wasn't present and increase tag occurrence count
 // thread-safety is not needed
-// TODO: You decide whether receiver should be a pointer or a value
-func (TagCloud) AddTag(tag string) {
-	// TODO: Implement this
+func (cloud *TagCloud) AddTag(tag string) {
+	cloud.tags[tag]++
 }
 
 // TopN should return top N most frequent tags ordered in descending order by occurrence count
@@ -30,8 +31,16 @@ func (TagCloud) AddTag(tag string) {
 // if n is greater that TagCloud size then all elements should be returned
 // thread-safety is not needed
 // there are no restrictions on time complexity
-// TODO: You decide whether receiver should be a pointer or a value
-func (TagCloud) TopN(n int) []TagStat {
-	// TODO: Implement this
-	return nil
+func (cloud *TagCloud) TopN(n int) []TagStat {
+	tags := make([]TagStat, 0, len(cloud.tags))
+	for tag, count := range cloud.tags {
+		tags = append(tags, TagStat{Tag: tag, OccurrenceCount: count})
+	}
+	slices.SortFunc(tags, func(a, b TagStat) int {
+		return b.OccurrenceCount - a.OccurrenceCount
+	})
+	if len(tags) < n {
+		n = len(tags)
+	}
+	return tags[:n]
 }
