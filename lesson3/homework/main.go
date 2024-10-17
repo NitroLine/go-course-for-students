@@ -99,43 +99,10 @@ func ParseFlags() (*Options, error) {
 	return &opts, nil
 }
 
-func process(opts *Options) error {
-	// init writer and reader
+func process(reader io.Reader, writer io.Writer, opts *Options) error {
 	parsedConv, e := opts.ParseConv()
 	if e != nil {
 		return e
-	}
-	var reader io.Reader
-	if opts.From != "" {
-		readFile, err := os.Open(opts.From)
-		if err != nil {
-			return err
-		}
-		defer readFile.Close()
-		reader = readFile
-	} else {
-		reader = io.Reader(os.Stdin)
-	}
-	var writer io.Writer
-	if opts.To != "" {
-		writeFile, err := os.OpenFile(
-			opts.To,
-			os.O_WRONLY|os.O_TRUNC|os.O_CREATE,
-			0666,
-		)
-		if err != nil {
-			return err
-		}
-		defer writeFile.Close()
-		writer = writeFile
-	} else {
-		writer = io.Writer(os.Stdout)
-	}
-	{
-		_, err := io.CopyN(io.Discard, reader, opts.Offset)
-		if err != nil {
-			return fmt.Errorf("apply offset failed (possible offset greater then input size): %v", err)
-		}
 	}
 	// main cycle
 	var prevBuffer []byte
@@ -235,13 +202,48 @@ func process(opts *Options) error {
 	return nil
 }
 
+func initFilesAndProcess(opts *Options) error {
+	// init writer and reader
+	var reader io.Reader
+	if opts.From != "" {
+		readFile, err := os.Open(opts.From)
+		if err != nil {
+			return err
+		}
+		defer readFile.Close()
+		reader = readFile
+	} else {
+		reader = io.Reader(os.Stdin)
+	}
+	var writer io.Writer
+	if opts.To != "" {
+		writeFile, err := os.OpenFile(
+			opts.To,
+			os.O_WRONLY|os.O_TRUNC|os.O_CREATE,
+			0666,
+		)
+		if err != nil {
+			return err
+		}
+		defer writeFile.Close()
+		writer = writeFile
+	} else {
+		writer = io.Writer(os.Stdout)
+	}
+	_, err := io.CopyN(io.Discard, reader, opts.Offset)
+	if err != nil {
+		return fmt.Errorf("apply offset failed (possible offset greater then input size): %v", err)
+	}
+	return process(reader, writer, opts)
+}
+
 func main() {
 	opts, err := ParseFlags()
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "can not parse flags:", err)
 		os.Exit(1)
 	}
-	err = process(opts)
+	err = initFilesAndProcess(opts)
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "error while processing:", err)
 		os.Exit(1)
