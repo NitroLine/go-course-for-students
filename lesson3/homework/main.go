@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -132,17 +131,18 @@ func process(opts *Options) error {
 	} else {
 		writer = io.Writer(os.Stdout)
 	}
-
-	// main cycle
-	var prevBuffer []byte
-	var isSpaceEnded = false
-	var totalReadBytes uint = 0
 	{
 		_, err := io.CopyN(io.Discard, reader, opts.Offset)
 		if err != nil {
 			return fmt.Errorf("apply offset failed (possible offset greater then input size): %v", err)
 		}
 	}
+	// main cycle
+	var prevBuffer []byte
+	var endingSpaceBuffer []byte
+	var isSpaceEnded = false
+	var readingEndSpace = false
+	var totalReadBytes uint = 0
 	for {
 		// read block
 		endFile := false
@@ -160,6 +160,7 @@ func process(opts *Options) error {
 			endFile = true
 		}
 		// append unparsed rune bytes
+
 		buffer = append(prevBuffer, buffer[:count]...)
 		var writerBuf []byte
 		// decode read bytes per rune
@@ -184,35 +185,43 @@ func process(opts *Options) error {
 						if !isSpaceEnded {
 							buffer = buffer[size:]
 							continue SymbolIterate
+						} else {
+							readingEndSpace = true
+							endingSpaceBuffer = append(endingSpaceBuffer, buffer[:size]...)
+							buffer = buffer[size:]
+							continue SymbolIterate
 						}
 					} else {
 						isSpaceEnded = true
+						if readingEndSpace {
+							readingEndSpace = false
+							writerBuf = append(writerBuf, endingSpaceBuffer...)
+							endingSpaceBuffer = nil
+						}
 					}
 				}
 			}
-			var newWriteBuf []byte
 			if r == utf8.RuneError {
-				newWriteBuf = append(newWriteBuf, buffer[:size]...)
+				writerBuf = append(writerBuf, buffer[:size]...)
 			} else {
-				newWriteBuf = utf8.AppendRune(writerBuf, r)
+				writerBuf = utf8.AppendRune(writerBuf, r)
 			}
-
-			if (uint)(len(newWriteBuf)) > opts.BlockSize {
-				break
-			}
-			writerBuf = newWriteBuf
 			buffer = buffer[size:]
 		}
 		// save unparsed rune bytes
 		prevBuffer = buffer
-		// write to output
-		if isSpaceEnded {
-			writerBuf = bytes.TrimRightFunc(writerBuf, unicode.IsSpace)
-		}
 
-		_, err = writer.Write(writerBuf)
-		if err != nil {
-			return err
+		// write to output
+		for len(writerBuf) > 0 {
+			maxSize := opts.BlockSize
+			if maxSize > (uint)(len(writerBuf)) {
+				maxSize = (uint)(len(writerBuf))
+			}
+			_, err = writer.Write(writerBuf[:maxSize])
+			if err != nil {
+				return err
+			}
+			writerBuf = writerBuf[maxSize:]
 		}
 		totalReadBytes += (uint)(count)
 		if endFile || (opts.Limit > 0 && totalReadBytes >= opts.Limit) {
